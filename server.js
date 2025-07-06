@@ -3,21 +3,31 @@ const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const videoDir = path.join(__dirname, 'motivationalshorts');
 
-// Serve frontend and videos
-app.use(express.static(__dirname));
+// ✅ Allow cross-origin requests (important for Netlify ↔ Render)
+app.use(cors());
+
+// ✅ Ensure motivationalshorts folder exists
+if (!fs.existsSync(videoDir)) {
+  fs.mkdirSync(videoDir, { recursive: true });
+}
 
 // ✅ Serve video files from /motivationalshorts
-app.use('/motivationalshorts', express.static(path.join(__dirname, 'motivationalshorts')));
+app.use('/motivationalshorts', express.static(videoDir));
 
-// Multer config (store in memory first to rename later)
+// ✅ Accept JSON in DELETE requests
+app.use(express.json());
+
+// ✅ Multer config
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
+// ✅ Find next available "video (X).mp4" filename
 function getNextAvailableFilename() {
   const files = fs.readdirSync(videoDir);
   const usedNumbers = files
@@ -28,20 +38,19 @@ function getNextAvailableFilename() {
     .filter(n => n !== null)
     .sort((a, b) => a - b);
 
-  let nextNumber = 1;
+  let next = 1;
   for (const num of usedNumbers) {
-    if (num !== nextNumber) break;
-    nextNumber++;
+    if (num !== next) break;
+    next++;
   }
-  return `video (${nextNumber}).mp4`;
+  return `video (${next}).mp4`;
 }
 
+// ✅ Upload route
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).send('No video uploaded.');
 
-  // 👇 Add this line here
   console.log('Received file:', req.file.originalname);
-
   const nextName = getNextAvailableFilename();
   const filePath = path.join(videoDir, nextName);
 
@@ -55,41 +64,22 @@ app.post('/upload', upload.single('video'), (req, res) => {
   });
 });
 
-app.use(express.json());
+// ✅ Delete by query param (GET-style DELETE)
+app.delete('/delete', (req, res) => {
+  const filename = req.query.filename;
+  if (!filename) return res.status(400).send('No filename provided.');
 
-app.post('/delete', (req, res) => {
-  const fileName = req.body.fileName;
-  if (!fileName) return res.status(400).send('No filename provided.');
-
-  const filePath = path.join(videoDir, fileName);
-
+  const filePath = path.join(videoDir, filename);
   fs.unlink(filePath, err => {
     if (err) {
-      console.error('Failed to delete file:', err);
+      console.error('Delete error:', err);
       return res.status(500).send('Failed to delete file.');
     }
-    console.log('Deleted:', fileName);
+    console.log('Deleted file:', filename);
     res.sendStatus(200);
   });
 });
 
-app.delete('/delete', (req, res) => {
-    const filename = req.query.filename;
-    if (!filename) return res.status(400).send('No filename provided.');
-
-    const filePath = path.join(videoDir, filename);
-
-    fs.unlink(filePath, err => {
-        if (err) {
-            console.error('Delete error:', err);
-            return res.status(500).send('Failed to delete file.');
-        }
-        console.log('Deleted file:', filename);
-        res.sendStatus(200);
-    });
-});
-
-
 app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`✅ Server running at http://localhost:${PORT}`);
 });
